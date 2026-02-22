@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SensorNode Dashboard</title>
+    <link rel="manifest" href="manifest.json">
+    <script>
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('sw.js').then(() => {
+        console.log('Offline-Modus bereit!');
+        });
+    }
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+    :root { 
+        --primary: #0078d4; 
+        --primary-hover: #005a9e;
+        --bg: #f3f2f1; 
+        --card: #ffffff; 
+        --text: #323130; 
+        --text-secondary: #605e5c;
+        --border: #edebe9;
+        --danger: #d83b01;
+        --success: #107c10;
+    }
+
+    /* Grundlegendes Layout & Reset */
+    * {
+        box-sizing: border-box; /* Verhindert, dass Felder über den Rand ragen */
+    }
+
+    body { 
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+        background: var(--bg); 
+        color: var(--text); 
+        display: flex; 
+        justify-content: center; 
+        padding: 20px; 
+        margin: 0; 
+    }
+
+    .card { 
+        background: var(--card); 
+        padding: 25px; 
+        border-radius: 12px; 
+        box-shadow: 0 8px 24px rgba(0,0,0,0.12); 
+        width: 100%; 
+        max-width: 550px; 
+        min-height: 400px; 
+    }
+
+    .hidden { display: none; }
+    h2, h3 { margin-top: 0; color: var(--primary); }
+    h3 { margin-top: 25px; border-bottom: 1px solid var(--border); padding-bottom: 10px; }
+
+    /* Eingabefelder (Text & Zahlen) */
+    input[type="text"], 
+    input[type="number"] {
+        width: 100%; /* Füllt die komplette Breite der Card aus */
+        padding: 14px 15px; 
+        border: 1px solid #d1d1d1;
+        border-radius: 8px;
+        font-size: 16px;
+        margin-bottom: 20px;
+        background-color: #fff;
+        display: block;
+        transition: border-color 0.2s;
+    }
+
+    input:focus {
+        border-color: var(--primary);
+        outline: none;
+        box-shadow: 0 0 0 2px rgba(0, 120, 212, 0.2);
+    }
+
+    .input-group label {
+        display: block;
+        font-size: 0.9em;
+        font-weight: 600;
+        color: var(--text-secondary);
+        margin-bottom: 8px;
+        margin-left: 2px;
+    }
+
+    /* Buttons */
+    button { 
+        background: var(--primary); 
+        color: white; 
+        border: none; 
+        padding: 14px 20px; 
+        border-radius: 8px; 
+        cursor: pointer; 
+        width: 100%; 
+        margin: 10px 0; 
+        font-size: 16px; 
+        font-weight: 600; 
+        transition: all 0.2s ease; 
+    }
+
+    button:hover { background: var(--primary-hover); transform: translateY(-1px); }
+    button:active { transform: translateY(0); }
+    button.secondary { background: #edebe9; color: var(--text); }
+    button.secondary:hover { background: #e1dfdd; }
+    button.danger { background: var(--danger); }
+    button.danger:hover { background: #a4262c; }
+
+    /* Status Badges */
+    .status-badge { 
+        padding: 8px 14px; 
+        border-radius: 20px; 
+        font-size: 0.85em; 
+        font-weight: bold; 
+        display: inline-block; 
+        margin-bottom: 20px; 
+    }
+    .active { background: #dff6dd; color: var(--success); }
+    .inactive { background: #fde7e9; color: var(--danger); }
+
+    /* Sensorauswahl (Karten-Stil) */
+    .sensor-selection { margin: 20px 0; }
+
+    .sensor-row {
+        display: flex;
+        align-items: center;
+        padding: 14px 15px;
+        background: #f8f9fa;
+        border-radius: 8px;
+        margin-bottom: 10px;
+        border: 1px solid var(--border);
+        cursor: pointer;
+        transition: background 0.2s;
+    }
+
+    .sensor-row:hover { background: #f0f0f0; }
+
+    .sensor-row input[type="checkbox"] {
+        margin-right: 15px;
+        transform: scale(1.3);
+        cursor: pointer;
+    }
+
+    .sensor-row span { font-weight: 500; color: var(--text); }
+
+    /* Charts & Tabellen */
+    .chart-card { 
+        background: #fff; 
+        border: 1px solid var(--border); 
+        border-radius: 8px; 
+        padding: 10px; 
+        margin-bottom: 15px; 
+    }
+    .chart-card small { 
+        font-weight: bold; 
+        color: var(--text-secondary); 
+        display: block; 
+        margin-bottom: 5px; 
+        text-transform: uppercase; 
+        letter-spacing: 0.5px; 
+    }
+
+    table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
+    th { background: #faf9f8; text-align: left; padding: 10px; border-bottom: 2px solid var(--border); }
+    td { padding: 10px; border-bottom: 1px solid #f3f2f1; }
+    .scroll-table { max-height: 250px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; }
+</style>
+</head>
+<body>
+
+<div class="card">
+    <div id="view-connect">
+        <h2>SensorNode</h2>
+        <p>Bitte verbinde dich mit deinem Sensor über Bluetooth.</p>
+        <button onclick="connectBLE()">Mit Gerät verbinden</button>
+    </div>
+
+    <div id="view-main" class="hidden">
+        <h2 id="display-node-name">Gerät</h2>
+        <span id="lt-status" class="status-badge">...</span>
+        
+        <button onclick="renderLiveConfig()">Live Messung starten</button>
+        <button onclick="openLongtermConfig()">Langzeit Konfiguration</button>
+        <button class="secondary" onclick="disconnectBLE()">Verbindung trennen</button>
+    </div>
+
+    <div id="view-live-setup" class="hidden">
+        <h3>Live Messung konfigurieren</h3>
+        <p>Wähle die Sensoren aus:</p>
+        <div id="live-sensor-options" class="sensor-selection"></div> ...
+        
+        <label for="live-interval">Messintervall (Sekunden):</label>
+        <input type="number" id="live-interval" value="1.0" min="0.2" max="10" step="0.1">
+        
+        <button onclick="startLive('chart')">Start: Graphen-Ansicht</button>
+        <button onclick="startLive('table')">Start: Tabellen-Ansicht</button>
+        <button class="secondary" onclick="showView('view-main')">Zurück</button>
+    </div>
+
+    <div id="view-data" class="hidden">
+        <h3 id="data-title">Echtzeitdaten</h3>
+        
+        <div id="dynamic-charts"></div>
+
+        <div id="container-table" class="hidden">
+            <div class="scroll-table">
+                <table>
+                    <thead><tr id="table-head"></tr></thead>
+                    <tbody id="data-body"></tbody>
+                </table>
+            </div>
+        </div>
+        
+        <br>
+        
+        <div id="export-controls-chart" class="hidden" style="margin-bottom: 15px;">
+            <button onclick="downloadCSV()">CSV Herunterladen</button>
+            <button onclick="downloadCharts()">Graphen als Bild speichern</button>
+        </div>
+
+        <div id="export-controls-table" class="hidden" style="margin-bottom: 15px;">
+            <button onclick="downloadTableCSV()">Tabelle als CSV herunterladen</button>
+        </div>
+
+        <button class="danger" onclick="stopLive()">Messung stoppen</button>
+    </div>
+
+    <div id="view-longterm-setup" class="hidden">
+    <h3>System-Einstellungen</h3>
+    
+    <div class="input-group">
+        <label>Gerätename</label>
+        <input type="text" id="lt-nodename" maxlength="19" placeholder="z.B. WetterNode">
+    </div>
+
+    <div class="input-group">
+        <label>Knoten-ID</label>
+        <input type="number" id="lt-nodeid">
+    </div>
+
+    <div class="input-group">
+        <label>Schlaf-Intervall (Sekunden)</label>
+        <input type="number" id="lt-sleep">
+    </div>
+
+    <div class="input-group">
+        <label>Sende-Intervall-Max (Update nach max Anzahl Messungen)</label>
+        <input type="number" id="lt-minUpdate">
+    </div>
+
+    <div class="input-group">
+        <label>Proben pro Messung (Oversampling)</label>
+        <input type="number" id="lt-samples" max="20">
+    </div>
+
+    <h3>Sensoren</h3>
+    <div class="sensor-selection">
+        <label class="sensor-row">
+            <input type="checkbox" id="lt-has-sht45">
+            <span>SHT45 (Temperatur & Feuchte)</span>
+        </label>
+        <label class="sensor-row">
+            <input type="checkbox" id="lt-has-battery">
+            <span>Batteriemessung</span>
+        </label>
+    </div>
+    
+    <div class="button-group" style="margin-top: 30px;">
+        <button onclick="sendLTCommand('start_lt')">Speichern & Starten</button>
+        <button class="danger" onclick="sendLTCommand('stop_lt')">Messung Stoppen</button>
+        <button class="secondary" onclick="showView('view-main')">Abbrechen</button>
+    </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
