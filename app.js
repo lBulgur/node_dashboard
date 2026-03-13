@@ -136,15 +136,14 @@ function processJsonBuffer(type) {
 
 function applyConfig(config) {
     console.log("Konfiguration empfangen:", config);
-    sensorMetadata = config.sensors || []; 
-    
+    sensorMetadata = config.sensors || [];
+
     document.getElementById('display-node-name').textContent = config.node_name || "SensorNode";
-    
+
     // UI-Felder füllen
     document.getElementById('lt-nodename').value = config.node_name || "";
     document.getElementById('lt-nodeid').value = config.nodeID || 0;
     document.getElementById('lt-samples').value = config.sampleCount || 1;
-    document.getElementById('lt-has-sht45').checked = config.has_sht45;
     document.getElementById('lt-has-battery').checked = config.has_battery;
 
     if (config.sleepMs) {
@@ -155,11 +154,71 @@ function applyConfig(config) {
         document.getElementById('lt-minUpdate').value = interval;
     }
 
+    // Sensor-Dropdown befüllen
+    const sel = document.getElementById('lt-sensor-type');
+    sel.innerHTML = "";
+    if (config.sTypes) {
+        config.sTypes.forEach(st => {
+            const opt = document.createElement('option');
+            opt.value = st.id;
+            opt.textContent = st.n;
+            sel.appendChild(opt);
+        });
+    }
+    sel.value = config.sensorType || 1;
+    updateSensorHints(parseInt(sel.value));
+
+    // HMC5883L-specific fields
+    if (config.sensorType === 6) {
+        document.getElementById('lt-volume-per-pulse').value = config.volumePerPulse || 0.01;
+        document.getElementById('lt-pulse-count').value = config.pulseCount || 0;
+        const calStatus = document.getElementById('hmc-cal-status');
+        if (config.magCalibrated) {
+            calStatus.textContent = "Kalibriert (Schwelle: " + (config.magThreshold || 0).toFixed(1) + " µT)";
+            calStatus.style.color = "#107c10";
+        } else {
+            calStatus.textContent = "Nicht kalibriert";
+            calStatus.style.color = "#d83b01";
+        }
+    }
+
+    // DS18B20-specific fields
+    if (config.sensorType === 8 && config.ds18b20_probes) {
+        renderDS18B20Probes(config.ds18b20_probes);
+    }
+
+    // Schwellwert-Felder dynamisch rendern (nur Sensor-Kanäle, ohne Batterie)
+    renderThresholdFields(sensorMetadata.filter(s => s.name !== "Battery"));
+
     const badge = document.getElementById('lt-status');
     if (badge) {
         badge.textContent = config.lt_active ? "Langzeitmessung AKTIV" : "Langzeitmessung PAUSE";
         badge.className = "status-badge " + (config.lt_active ? "active" : "inactive");
     }
+}
+
+function updateSensorHints(typeId) {
+    // SDP810-125Pa = 3, SDP810-Pitot = 4
+    document.getElementById('sdp-hint').classList.toggle('hidden', typeId !== 3 && typeId !== 4);
+    // ICS-43434 = 7
+    document.getElementById('ics-hint').classList.toggle('hidden', typeId !== 7);
+    // HMC5883L = 6
+    document.getElementById('hmc-config').classList.toggle('hidden', typeId !== 6);
+    // DS18B20 = 8
+    document.getElementById('ds18b20-config').classList.toggle('hidden', typeId !== 8);
+}
+
+function renderThresholdFields(channels) {
+    const container = document.getElementById('threshold-fields');
+    container.innerHTML = "";
+    channels.forEach(ch => {
+        container.innerHTML += `
+            <div class="input-group">
+                <label>${ch.data} – Schwellwert (${ch.unit})</label>
+                <input type="number" class="thr-input" data-id="${ch.id}"
+                       value="${ch.thr}" step="any" min="0">
+            </div>`;
+    });
 }
 
 function updateUI(data) {
@@ -221,15 +280,32 @@ async function sendLTCommand(cmd) {
             const seconds = parseFloat(document.getElementById('lt-sleep').value);
             
             // Neues Settings-Objekt mit allen Feldern
+            const sType = parseInt(document.getElementById('lt-sensor-type').value);
             const newSettings = {
                 node_name: document.getElementById('lt-nodename').value,
                 nodeID: parseInt(document.getElementById('lt-nodeid').value),
                 sleepMs: Math.round(seconds * 1000),
                 minUpdateInterval: parseInt(document.getElementById('lt-minUpdate').value),
                 sampleCount: parseInt(document.getElementById('lt-samples').value),
-                has_sht45: document.getElementById('lt-has-sht45').checked,
+                sensorType: sType,
                 has_battery: document.getElementById('lt-has-battery').checked
             };
+            // HMC5883L-specific fields
+            if (sType === 6) {
+                newSettings.volumePerPulse = parseFloat(document.getElementById('lt-volume-per-pulse').value);
+                newSettings.pulseCount = parseInt(document.getElementById('lt-pulse-count').value);
+            }
+            // DS18B20 probe labels
+            if (sType === 8) {
+                const probes = [];
+                document.querySelectorAll('.ds-probe-row').forEach(row => {
+                    probes.push({
+                        addr: row.dataset.addr,
+                        label: row.querySelector('.ds-label').value || 'Probe'
+                    });
+                });
+                if (probes.length > 0) newSettings.ds18b20_probes = probes;
+            }
             
             console.log("Sende neue Einstellungen:", newSettings);
             await chars.conf.writeValue(new TextEncoder().encode(JSON.stringify(newSettings)));
@@ -501,3 +577,57 @@ function downloadTableCSV() {
     a.click();
     URL.revokeObjectURL(url);
 }
+
+// --- DS18B20 ---
+async function scanDS18B20() {
+    try {
+        const list = document.getElementById('ds-probe-list');
+        list.innerHTML = '<p style="color:#605e5c;">Suche Sensoren...</p>';
+        configBuffer = "";
+        await chars.cmd.writeValue(new TextEncoder().encode('ds_scan'));
+        // Results come back via config push (applyConfig → renderDS18B20Probes)
+    } catch (e) {
+        alert("Fehler: " + e.message);
+    }
+}
+
+function renderDS18B20Probes(probes) {
+    const list = document.getElementById('ds-probe-list');
+    list.innerHTML = '';
+    if (!probes || probes.length === 0) {
+        list.innerHTML = '<p style="color:#d83b01;">Keine Sensoren gefunden. Kabel prüfen und erneut scannen.</p>';
+        return;
+    }
+    probes.forEach((p, i) => {
+        const shortAddr = p.addr ? p.addr.substring(0, 4) + '...' + p.addr.substring(12) : '?';
+        list.innerHTML += `
+            <div class="ds-probe-row" data-addr="${p.addr}" style="background:#f8f9fa; border:1px solid #edebe9; border-radius:8px; padding:12px 15px; margin-bottom:10px;">
+                <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+                    <span style="font-size:0.85em; color:#605e5c;">Sensor ${i+1} (${shortAddr})</span>
+                </div>
+                <input type="text" class="ds-label" value="${p.label || ''}" maxlength="15" placeholder="z.B. Vorlauf HK1" style="margin-bottom:0;">
+            </div>`;
+    });
+}
+
+// --- KALIBRIERUNG ---
+async function sendCalibrate() {
+    try {
+        const calStatus = document.getElementById('hmc-cal-status');
+        calStatus.textContent = "Kalibrierung läuft...";
+        calStatus.style.color = "#605e5c";
+
+        configBuffer = "";
+        await chars.cmd.writeValue(new TextEncoder().encode('calibrate'));
+
+        // Wait for cal_ok/cal_fail status (comes via statusChar or config push)
+        // Config push will update UI via applyConfig
+    } catch (e) {
+        alert("Fehler: " + e.message);
+    }
+}
+
+// --- EVENT LISTENER ---
+document.getElementById('lt-sensor-type').addEventListener('change', function() {
+    updateSensorHints(parseInt(this.value));
+});

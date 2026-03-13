@@ -55,8 +55,35 @@
     h2, h3 { margin-top: 0; color: var(--primary); }
     h3 { margin-top: 25px; border-bottom: 1px solid var(--border); padding-bottom: 10px; }
 
-    /* Eingabefelder (Text & Zahlen) */
-    input[type="text"], 
+    /* Eingabefelder (Text, Zahlen, Dropdowns) */
+    select {
+        width: 100%;
+        padding: 14px 15px;
+        border: 1px solid #d1d1d1;
+        border-radius: 8px;
+        font-size: 16px;
+        margin-bottom: 20px;
+        background-color: #fff;
+        display: block;
+        transition: border-color 0.2s;
+        appearance: auto;
+    }
+    select:focus {
+        border-color: var(--primary);
+        outline: none;
+        box-shadow: 0 0 0 2px rgba(0, 120, 212, 0.2);
+    }
+    .hint-box {
+        background: #fff8e1;
+        border: 1px solid #ffe082;
+        border-radius: 8px;
+        padding: 12px 15px;
+        margin-bottom: 15px;
+        font-size: 0.85em;
+        color: #5d4037;
+    }
+
+    input[type="text"],
     input[type="number"] {
         width: 100%; /* Füllt die komplette Breite der Card aus */
         padding: 14px 15px; 
@@ -253,12 +280,47 @@
         <input type="number" id="lt-samples" max="20">
     </div>
 
-    <h3>Sensoren</h3>
+    <h3>Sensor</h3>
+    <div class="input-group">
+        <label>Aktiver Sensor</label>
+        <select id="lt-sensor-type"></select>
+    </div>
+    <div id="sdp-hint" class="hint-box hidden">
+        SDP810 erkannt: Bitte Variante w&auml;hlen &ndash; <strong>125Pa</strong> (Differenzdruck) oder <strong>Pitot</strong> (Luftgeschwindigkeit).
+    </div>
+    <div id="ics-hint" class="hint-box hidden">
+        ICS-43434 kann nicht automatisch erkannt werden. Bitte sicherstellen, dass das Mikrofon angeschlossen ist (5-Ader-Kabel mit VCC).
+    </div>
+    <div id="hmc-config" class="hidden">
+        <div class="input-group">
+            <label>Volumen pro Impuls (m&sup3;)</label>
+            <input type="number" id="lt-volume-per-pulse" value="0.01" step="0.001" min="0.001">
+        </div>
+        <div class="input-group">
+            <label>Impulszähler</label>
+            <div style="display:flex; gap:10px; align-items:center; margin-bottom:15px;">
+                <input type="number" id="lt-pulse-count" value="0" min="0" style="flex:1">
+                <button class="secondary" style="width:auto; margin:0; padding:10px 15px;" onclick="document.getElementById('lt-pulse-count').value='0'">Reset</button>
+            </div>
+        </div>
+        <div style="margin-bottom:15px;">
+            <span id="hmc-cal-status" style="font-weight:600;"></span>
+        </div>
+        <button class="secondary" onclick="sendCalibrate()">Magnetometer kalibrieren</button>
+    </div>
+    <div id="ds18b20-config" class="hidden">
+        <div class="hint-box">
+            DS18B20 OneWire Temperaturfühler. Bis zu 6 Sensoren am Bus.
+            <br><strong>Tipp:</strong> Fühler anfassen → Temperatur steigt → so identifizieren.
+        </div>
+        <div style="display:flex; gap:10px; margin-bottom:15px;">
+            <button class="secondary" style="flex:1; margin:0;" onclick="scanDS18B20()">Sensoren suchen</button>
+            <button class="secondary" style="flex:1; margin:0;" onclick="scanDS18B20()">Aktualisieren</button>
+        </div>
+        <div id="ds-probe-list"></div>
+    </div>
+    <div id="threshold-fields"></div>
     <div class="sensor-selection">
-        <label class="sensor-row">
-            <input type="checkbox" id="lt-has-sht45">
-            <span>SHT45 (Temperatur & Feuchte)</span>
-        </label>
         <label class="sensor-row">
             <input type="checkbox" id="lt-has-battery">
             <span>Batteriemessung</span>
