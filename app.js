@@ -141,14 +141,16 @@ let lastConfig = {};
 function applyConfig(config) {
     console.log("Konfiguration empfangen:", config);
 
-    // Log-Antwort: Nur im Log-View anzeigen
-    if (config.log) {
+    // Error-Log-Antwort: Nur im Log-View anzeigen
+    if (config.errors !== undefined) {
         const logDiv = document.getElementById('log-content');
-        if (config.log.length === 0) {
-            logDiv.textContent = 'Keine Einträge vorhanden.';
+        let text = `Fehler gesamt: ${config.errorCount || 0}\n\n`;
+        if (!config.errors || config.errors.length === 0) {
+            text += 'Keine Fehler gespeichert.';
         } else {
-            logDiv.textContent = config.log.join('\n');
+            text += config.errors.map((e, i) => `${i + 1}. ${e}`).join('\n');
         }
+        logDiv.textContent = text;
         logDiv.scrollTop = logDiv.scrollHeight;
         return;
     }
@@ -757,16 +759,16 @@ async function sendCalibrate() {
     }
 }
 
-// --- AKTIVITÄTSLOG ---
+// --- ERROR LOG ---
 async function openLog() {
     try {
         const logDiv = document.getElementById('log-content');
-        logDiv.textContent = 'Lade Log...';
+        logDiv.textContent = 'Lade Error-Log...';
         configBuffer = "";
         showView('view-log');
         await chars.cmd.writeValue(new TextEncoder().encode('get_log'));
     } catch (e) {
-        console.error("Fehler beim Laden des Logs:", e);
+        console.error("Fehler beim Laden des Error-Logs:", e);
         document.getElementById('log-content').textContent = 'Fehler: ' + e.message;
     }
 }
