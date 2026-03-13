@@ -134,14 +134,39 @@ function processJsonBuffer(type) {
 }
 // --- UI UPDATES ---
 
+// Globaler Cache der letzten Config vom Arduino
+let lastConfig = {};
+
 function applyConfig(config) {
     console.log("Konfiguration empfangen:", config);
+
+    // Test-Ergebnis: Nur Messwerte anzeigen, kein volles Config-Update
+    if (config.test) {
+        const resultDiv = document.getElementById('sc-test-result');
+        if (config.error) {
+            resultDiv.innerHTML = `<span style="color:#d83b01; font-weight:600;">${config.error}</span>`;
+        } else if (config.v) {
+            let html = '';
+            for (const [key, val] of Object.entries(config.v)) {
+                html += `<div style="display:flex; justify-content:space-between; padding:4px 0;">
+                    <span style="font-weight:500;">${key}</span>
+                    <span style="font-weight:600; color:#0078d4;">${val}</span>
+                </div>`;
+            }
+            resultDiv.innerHTML = html;
+        }
+        return;
+    }
+
+    lastConfig = config;
     sensorMetadata = config.sensors || [];
 
     document.getElementById('display-node-name').textContent = config.node_name || "SensorNode";
 
-    // UI-Felder füllen
+    // --- Longterm-Felder ---
     document.getElementById('lt-nodename').value = config.node_name || "";
+    document.getElementById('lt-project').value = config.project || "";
+    document.getElementById('lt-location').value = config.location || "";
     document.getElementById('lt-nodeid').value = config.nodeID || 0;
     document.getElementById('lt-samples').value = config.sampleCount || 1;
     document.getElementById('lt-has-battery').checked = config.has_battery;
@@ -154,8 +179,8 @@ function applyConfig(config) {
         document.getElementById('lt-minUpdate').value = interval;
     }
 
-    // Sensor-Dropdown befüllen
-    const sel = document.getElementById('lt-sensor-type');
+    // --- Sensor-Config-Felder ---
+    const sel = document.getElementById('sc-sensor-type');
     sel.innerHTML = "";
     if (config.sTypes) {
         config.sTypes.forEach(st => {
@@ -170,9 +195,9 @@ function applyConfig(config) {
 
     // HMC5883L-specific fields
     if (config.sensorType === 6) {
-        document.getElementById('lt-volume-per-pulse').value = config.volumePerPulse || 0.01;
-        document.getElementById('lt-pulse-count').value = config.pulseCount || 0;
-        const calStatus = document.getElementById('hmc-cal-status');
+        document.getElementById('sc-volume-per-pulse').value = config.volumePerPulse || 0.01;
+        document.getElementById('sc-pulse-count').value = config.pulseCount || 0;
+        const calStatus = document.getElementById('sc-hmc-cal-status');
         if (config.magCalibrated) {
             calStatus.textContent = "Kalibriert (Schwelle: " + (config.magThreshold || 0).toFixed(1) + " µT)";
             calStatus.style.color = "#107c10";
@@ -199,17 +224,19 @@ function applyConfig(config) {
 
 function updateSensorHints(typeId) {
     // SDP810-125Pa = 3, SDP810-Pitot = 4
-    document.getElementById('sdp-hint').classList.toggle('hidden', typeId !== 3 && typeId !== 4);
+    document.getElementById('sc-sdp-hint').classList.toggle('hidden', typeId !== 3 && typeId !== 4);
     // ICS-43434 = 7
-    document.getElementById('ics-hint').classList.toggle('hidden', typeId !== 7);
+    document.getElementById('sc-ics-hint').classList.toggle('hidden', typeId !== 7);
     // HMC5883L = 6
-    document.getElementById('hmc-config').classList.toggle('hidden', typeId !== 6);
+    document.getElementById('sc-hmc-config').classList.toggle('hidden', typeId !== 6);
     // DS18B20 = 8
-    document.getElementById('ds18b20-config').classList.toggle('hidden', typeId !== 8);
+    document.getElementById('sc-ds18b20-config').classList.toggle('hidden', typeId !== 8);
+    // SCD40 Test-Hinweis = 2
+    document.getElementById('sc-test-hint').classList.toggle('hidden', typeId !== 2);
 }
 
 function renderThresholdFields(channels) {
-    const container = document.getElementById('threshold-fields');
+    const container = document.getElementById('sc-threshold-fields');
     container.innerHTML = "";
     channels.forEach(ch => {
         container.innerHTML += `
@@ -278,41 +305,23 @@ async function sendLTCommand(cmd) {
 
         if (cmd === 'start_lt') {
             const seconds = parseFloat(document.getElementById('lt-sleep').value);
-            
-            // Neues Settings-Objekt mit allen Feldern
-            const sType = parseInt(document.getElementById('lt-sensor-type').value);
+
             const newSettings = {
                 node_name: document.getElementById('lt-nodename').value,
+                project: document.getElementById('lt-project').value,
+                location: document.getElementById('lt-location').value,
                 nodeID: parseInt(document.getElementById('lt-nodeid').value),
                 sleepMs: Math.round(seconds * 1000),
                 minUpdateInterval: parseInt(document.getElementById('lt-minUpdate').value),
                 sampleCount: parseInt(document.getElementById('lt-samples').value),
-                sensorType: sType,
                 has_battery: document.getElementById('lt-has-battery').checked
             };
-            // HMC5883L-specific fields
-            if (sType === 6) {
-                newSettings.volumePerPulse = parseFloat(document.getElementById('lt-volume-per-pulse').value);
-                newSettings.pulseCount = parseInt(document.getElementById('lt-pulse-count').value);
-            }
-            // DS18B20 probe labels
-            if (sType === 8) {
-                const probes = [];
-                document.querySelectorAll('.ds-probe-row').forEach(row => {
-                    probes.push({
-                        addr: row.dataset.addr,
-                        label: row.querySelector('.ds-label').value || 'Probe'
-                    });
-                });
-                if (probes.length > 0) newSettings.ds18b20_probes = probes;
-            }
-            
-            console.log("Sende neue Einstellungen:", newSettings);
+
+            console.log("Sende Langzeit-Einstellungen:", newSettings);
             await chars.conf.writeValue(new TextEncoder().encode(JSON.stringify(newSettings)));
-            
-            // Kurz warten, damit der Arduino das JSON parsen und speichern kann,
-            // bevor der "start_lt" Befehl hinterhergeschossen wird.
-            await new Promise(r => setTimeout(r, 500)); 
+
+            // Kurz warten, damit der Arduino das JSON parsen und speichern kann
+            await new Promise(r => setTimeout(r, 500));
         }
 
         // Kommando senden (start_lt oder stop_lt)
@@ -410,6 +419,66 @@ function renderLiveConfig() {
             </label>`;
     });
     showView('view-live-setup');
+}
+
+async function openSensorConfig() {
+    try {
+        configBuffer = "";
+        await chars.cmd.writeValue(new TextEncoder().encode('ping'));
+        setTimeout(() => {
+            showView('view-sensor-setup');
+        }, 500);
+    } catch (e) {
+        console.error("Fehler beim Öffnen der Sensor-Konfiguration:", e);
+        showView('view-sensor-setup');
+    }
+}
+
+async function saveSensorConfig() {
+    try {
+        configBuffer = "";
+
+        const sType = parseInt(document.getElementById('sc-sensor-type').value);
+        const newSettings = {
+            sensorType: sType
+        };
+
+        // HMC5883L-specific fields
+        if (sType === 6) {
+            newSettings.volumePerPulse = parseFloat(document.getElementById('sc-volume-per-pulse').value);
+            newSettings.pulseCount = parseInt(document.getElementById('sc-pulse-count').value);
+        }
+        // DS18B20 probe labels
+        if (sType === 8) {
+            const probes = [];
+            document.querySelectorAll('.ds-probe-row').forEach(row => {
+                probes.push({
+                    addr: row.dataset.addr,
+                    label: row.querySelector('.ds-label').value || 'Probe'
+                });
+            });
+            if (probes.length > 0) newSettings.ds18b20_probes = probes;
+        }
+
+        // Schwellwerte mitsenden
+        const thrInputs = document.querySelectorAll('#sc-threshold-fields .thr-input');
+        if (thrInputs.length > 0) {
+            const thresholds = {};
+            thrInputs.forEach(inp => {
+                thresholds[inp.dataset.id] = parseFloat(inp.value);
+            });
+            newSettings.thresholds = thresholds;
+        }
+
+        console.log("Sende Sensor-Konfiguration:", newSettings);
+        await chars.conf.writeValue(new TextEncoder().encode(JSON.stringify(newSettings)));
+        await new Promise(r => setTimeout(r, 500));
+        await chars.cmd.writeValue(new TextEncoder().encode('save'));
+
+        showView('view-main');
+    } catch (e) {
+        alert("Fehler: " + e.message);
+    }
 }
 
 async function openLongtermConfig() {
@@ -581,7 +650,7 @@ function downloadTableCSV() {
 // --- DS18B20 ---
 async function scanDS18B20() {
     try {
-        const list = document.getElementById('ds-probe-list');
+        const list = document.getElementById('sc-ds-probe-list');
         list.innerHTML = '<p style="color:#605e5c;">Suche Sensoren...</p>';
         configBuffer = "";
         await chars.cmd.writeValue(new TextEncoder().encode('ds_scan'));
@@ -592,7 +661,7 @@ async function scanDS18B20() {
 }
 
 function renderDS18B20Probes(probes) {
-    const list = document.getElementById('ds-probe-list');
+    const list = document.getElementById('sc-ds-probe-list');
     list.innerHTML = '';
     if (!probes || probes.length === 0) {
         list.innerHTML = '<p style="color:#d83b01;">Keine Sensoren gefunden. Kabel prüfen und erneut scannen.</p>';
@@ -600,14 +669,29 @@ function renderDS18B20Probes(probes) {
     }
     probes.forEach((p, i) => {
         const shortAddr = p.addr ? p.addr.substring(0, 4) + '...' + p.addr.substring(12) : '?';
+        const tempStr = (p.temp !== undefined && p.temp !== null) ? parseFloat(p.temp).toFixed(1) + ' °C' : '–';
         list.innerHTML += `
             <div class="ds-probe-row" data-addr="${p.addr}" style="background:#f8f9fa; border:1px solid #edebe9; border-radius:8px; padding:12px 15px; margin-bottom:10px;">
                 <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
                     <span style="font-size:0.85em; color:#605e5c;">Sensor ${i+1} (${shortAddr})</span>
+                    <span style="font-size:0.9em; font-weight:600; color:#0078d4;">${tempStr}</span>
                 </div>
                 <input type="text" class="ds-label" value="${p.label || ''}" maxlength="15" placeholder="z.B. Vorlauf HK1" style="margin-bottom:0;">
             </div>`;
     });
+}
+
+// --- SENSOR TEST ---
+async function testSensor() {
+    try {
+        const resultDiv = document.getElementById('sc-test-result');
+        resultDiv.innerHTML = '<span style="color:#605e5c;">Messung läuft...</span>';
+        configBuffer = "";
+        await chars.cmd.writeValue(new TextEncoder().encode('test'));
+        // Ergebnis kommt via configChar → applyConfig erkennt "test" Feld
+    } catch (e) {
+        alert("Fehler: " + e.message);
+    }
 }
 
 // --- KALIBRIERUNG ---
@@ -628,6 +712,6 @@ async function sendCalibrate() {
 }
 
 // --- EVENT LISTENER ---
-document.getElementById('lt-sensor-type').addEventListener('change', function() {
+document.getElementById('sc-sensor-type').addEventListener('change', function() {
     updateSensorHints(parseInt(this.value));
 });
