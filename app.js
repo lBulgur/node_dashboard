@@ -16,35 +16,6 @@ let configBuffer = "";
 let lastDataTime = Date.now();
 let disconnectTimer;
 
-// Kanal-Defaults pro Sensortyp (für Schwellwert-Vorschau ohne Firmware-Kontakt)
-const sensorChannelDefaults = {
-    1: [ // SHT45
-        { id: 1, data: "temp",     unit: "°C", thr: 0.5 },
-        { id: 2, data: "humidity", unit: "%",   thr: 2.5 }
-    ],
-    2: [ // SCD40
-        { id: 1, data: "CO2",      unit: "ppm", thr: 50 },
-        { id: 2, data: "temp",     unit: "°C",  thr: 0.5 },
-        { id: 3, data: "humidity", unit: "%",    thr: 2.5 }
-    ],
-    3: [ // SDP810-125Pa
-        { id: 1, data: "pressure", unit: "Pa", thr: 5.0 }
-    ],
-    4: [ // SDP810-Pitot
-        { id: 1, data: "velocity", unit: "m/s", thr: 0.5 }
-    ],
-    5: [ // BH1750
-        { id: 1, data: "lux", unit: "lx", thr: 50 }
-    ],
-    6: [ // HMC5883L
-        { id: 1, data: "pulses", unit: "",    thr: 1 },
-        { id: 2, data: "volume", unit: "m³",  thr: 0.01 }
-    ],
-    7: [ // ICS-43434
-        { id: 1, data: "sound", unit: "dB(A)", thr: 3 }
-    ]
-    // 8 = DS18B20: dynamisch, abhängig von Probe-Anzahl
-};
 
 // --- VERBINDUNG ---
 // Diese Funktion startet oder setzt den Timer zurück
@@ -170,6 +141,18 @@ let lastConfig = {};
 function applyConfig(config) {
     console.log("Konfiguration empfangen:", config);
 
+    // Log-Antwort: Nur im Log-View anzeigen
+    if (config.log) {
+        const logDiv = document.getElementById('log-content');
+        if (config.log.length === 0) {
+            logDiv.textContent = 'Keine Einträge vorhanden.';
+        } else {
+            logDiv.textContent = config.log.join('\n');
+        }
+        logDiv.scrollTop = logDiv.scrollHeight;
+        return;
+    }
+
     // Test-Ergebnis: Nur Messwerte anzeigen, kein volles Config-Update
     if (config.test) {
         testInProgress = false;
@@ -270,7 +253,7 @@ function updateSensorHints(typeId) {
 }
 
 function renderThresholdFields(channels) {
-    const container = document.getElementById('sc-threshold-fields');
+    const container = document.getElementById('lt-threshold-fields');
     container.innerHTML = "";
     channels.forEach(ch => {
         container.innerHTML += `
@@ -350,6 +333,14 @@ async function sendLTCommand(cmd) {
                 sampleCount: parseInt(document.getElementById('lt-samples').value),
                 has_battery: document.getElementById('lt-has-battery').checked
             };
+
+            // Schwellwerte mitsenden
+            const thrInputs = document.querySelectorAll('#lt-threshold-fields .thr-input');
+            if (thrInputs.length > 0) {
+                const thresholds = {};
+                thrInputs.forEach(inp => { thresholds[inp.dataset.id] = parseFloat(inp.value); });
+                newSettings.thresholds = thresholds;
+            }
 
             console.log("Sende Langzeit-Einstellungen:", newSettings);
             await chars.conf.writeValue(new TextEncoder().encode(JSON.stringify(newSettings)));
@@ -492,16 +483,6 @@ async function saveSensorConfig() {
                 });
             });
             if (probes.length > 0) newSettings.ds18b20_probes = probes;
-        }
-
-        // Schwellwerte mitsenden
-        const thrInputs = document.querySelectorAll('#sc-threshold-fields .thr-input');
-        if (thrInputs.length > 0) {
-            const thresholds = {};
-            thrInputs.forEach(inp => {
-                thresholds[inp.dataset.id] = parseFloat(inp.value);
-            });
-            newSettings.thresholds = thresholds;
         }
 
         console.log("Sende Sensor-Konfiguration:", newSettings);
@@ -742,13 +723,6 @@ async function testSensor() {
             });
             if (probes.length > 0) testConfig.ds18b20_probes = probes;
         }
-        const thrInputs = document.querySelectorAll('#sc-threshold-fields .thr-input');
-        if (thrInputs.length > 0) {
-            const thresholds = {};
-            thrInputs.forEach(inp => { thresholds[inp.dataset.id] = parseFloat(inp.value); });
-            testConfig.thresholds = thresholds;
-        }
-
         configBuffer = "";
         await chars.conf.writeValue(new TextEncoder().encode(JSON.stringify(testConfig)));
         await new Promise(r => setTimeout(r, 500));
@@ -783,18 +757,21 @@ async function sendCalibrate() {
     }
 }
 
+// --- AKTIVITÄTSLOG ---
+async function openLog() {
+    try {
+        const logDiv = document.getElementById('log-content');
+        logDiv.textContent = 'Lade Log...';
+        configBuffer = "";
+        showView('view-log');
+        await chars.cmd.writeValue(new TextEncoder().encode('get_log'));
+    } catch (e) {
+        console.error("Fehler beim Laden des Logs:", e);
+        document.getElementById('log-content').textContent = 'Fehler: ' + e.message;
+    }
+}
+
 // --- EVENT LISTENER ---
 document.getElementById('sc-sensor-type').addEventListener('change', function() {
-    const typeId = parseInt(this.value);
-    updateSensorHints(typeId);
-
-    // Schwellwerte lokal aus Defaults rendern (kein Firmware-Kontakt)
-    const defaults = sensorChannelDefaults[typeId];
-    if (defaults) {
-        renderThresholdFields(defaults);
-    } else if (typeId === 8) {
-        // DS18B20: Schwellwerte erst nach Scan verfügbar
-        document.getElementById('sc-threshold-fields').innerHTML =
-            '<p style="color:#605e5c; font-size:0.85em;">Schwellwerte werden nach dem Sensor-Scan angezeigt.</p>';
-    }
+    updateSensorHints(parseInt(this.value));
 });

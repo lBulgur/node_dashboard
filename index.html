@@ -209,6 +209,7 @@
         <button onclick="openSensorConfig()">Sensor konfigurieren</button>
         <button onclick="renderLiveConfig()">Live Messung starten</button>
         <button onclick="openLongtermConfig()">Langzeit Konfiguration</button>
+        <button class="secondary" onclick="openLog()">Aktivitätslog</button>
         <button class="secondary" onclick="disconnectBLE()">Verbindung trennen</button>
     </div>
 
@@ -295,9 +296,6 @@
         <div id="sc-ds-probe-list"></div>
     </div>
 
-    <h3>Schwellwerte</h3>
-    <div id="sc-threshold-fields"></div>
-
     <h3>Sensor testen</h3>
     <div id="sc-test-hint" class="hint-box hidden">
         Der CO₂-Sensor (SCD40) benötigt beim ersten Test ca. 30 Sekunden Aufwärmzeit. Danach liefern weitere Tests sofort Ergebnisse.
@@ -358,12 +356,26 @@
         </label>
     </div>
 
+    <h3>Schwellwerte</h3>
+    <div id="lt-threshold-fields"></div>
+
     <div class="button-group" style="margin-top: 30px;">
         <button onclick="sendLTCommand('start_lt')">Speichern & Starten</button>
         <button class="danger" onclick="sendLTCommand('stop_lt')">Messung Stoppen</button>
         <button class="secondary" onclick="showView('view-main')">Zurück</button>
     </div>
 </div>
+
+    <div id="view-log" class="hidden">
+    <h3>Aktivitätslog</h3>
+    <div id="log-content" style="background:#1e1e1e; color:#d4d4d4; border-radius:8px; padding:15px; font-family:monospace; font-size:0.8em; max-height:400px; overflow-y:auto; white-space:pre-wrap;">
+        Lade...
+    </div>
+    <div class="button-group" style="margin-top: 20px;">
+        <button class="secondary" onclick="openLog()">Aktualisieren</button>
+        <button class="secondary" onclick="showView('view-main')">Zurück</button>
+    </div>
+    </div>
 
 <script src="app.js"></script>
 </body>
