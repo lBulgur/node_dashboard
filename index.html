@@ -210,6 +210,7 @@
         <button onclick="renderLiveConfig()">Live Messung starten</button>
         <button onclick="openLongtermConfig()">Langzeit Konfiguration</button>
         <button class="secondary" onclick="openLog()">Error-Log</button>
+        <button class="secondary" onclick="openDfu()">Firmware Update</button>
         <button class="secondary" onclick="disconnectBLE()">Verbindung trennen</button>
     </div>
 
@@ -366,6 +367,33 @@
     </div>
 </div>
 
+    <div id="view-dfu" class="hidden">
+    <h3>Firmware Update</h3>
+    <p style="color:var(--text-secondary); font-size:0.9em;">
+        Wähle eine <code>.zip</code> Firmware-Datei aus (wird beim Build erzeugt).
+    </p>
+
+    <input type="file" id="dfu-file" accept=".zip" style="width:100%; padding:12px; margin-bottom:15px; border:1px solid var(--border); border-radius:8px;">
+
+    <div id="dfu-progress-container" class="hidden">
+        <div style="background:var(--border); border-radius:8px; overflow:hidden; height:24px; margin-bottom:10px;">
+            <div id="dfu-progress-bar" style="background:var(--primary); height:100%; width:0%; transition:width 0.3s;"></div>
+        </div>
+        <p id="dfu-status" style="color:var(--text-secondary); font-size:0.85em; text-align:center;">Bereit</p>
+    </div>
+
+    <div id="dfu-buttons">
+        <button onclick="startDfuUpdate()">Update starten</button>
+        <button class="secondary" onclick="showView('view-main')">Zurück</button>
+    </div>
+
+    <div id="dfu-reconnect" class="hidden">
+        <p style="color:var(--text-secondary); margin-bottom:15px;">Node ist im Bootloader-Modus. Klicke um die Firmware zu übertragen:</p>
+        <button onclick="dfuConnectBootloader()">Mit Bootloader verbinden</button>
+        <button class="secondary danger" onclick="dfuCancel()">Abbrechen</button>
+    </div>
+    </div>
+
     <div id="view-log" class="hidden">
     <h3>Error-Log</h3>
     <div id="log-content" style="background:#1e1e1e; color:#d4d4d4; border-radius:8px; padding:15px; font-family:monospace; font-size:0.8em; max-height:400px; overflow-y:auto; white-space:pre-wrap;">
@@ -377,6 +405,7 @@
     </div>
     </div>
 
+<script src="dfu.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

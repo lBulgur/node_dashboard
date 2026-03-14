@@ -16,6 +16,8 @@ let liveBuffer = "";
 let configBuffer = "";
 let lastDataTime = Date.now();
 let disconnectTimer;
+let dfuInProgress = false;
+let dfuZipData = null;
 
 
 // --- VERBINDUNG ---
@@ -95,6 +97,11 @@ function handleStatus(ev) {
         if (list) list.innerHTML = '<p style="color:#605e5c;">Scanne I2C-Bus...</p>';
     } else if (status === 'ds_done') {
         // Config-Push kommt automatisch mit den Ergebnissen
+    } else if (status === 'dfu_reboot') {
+        // Node springt in den Bootloader — Reconnect-Button zeigen
+        document.getElementById('dfu-buttons').classList.add('hidden');
+        document.getElementById('dfu-reconnect').classList.remove('hidden');
+        document.getElementById('dfu-status').textContent = 'Node startet Bootloader...';
     }
 }
 
@@ -395,45 +402,32 @@ async function sendLTCommand(cmd) {
     }
 }
 
-// --- CHARTS INITIALISIERUNG ---
+// --- CHARTS ---
 
-function initSingleChart(id, canvasId, meta) {
-    const ctx = document.getElementById(canvasId).getContext('2d');
-    if (charts[id]) charts[id].destroy();
-
-    charts[id] = new Chart(ctx, {
+function createLiveChart(ctx) {
+    return new Chart(ctx, {
         type: 'line',
-        data: {
-            labels: [],
-            datasets: [{
-                data: [],
-                borderColor: '#0078d4',
-                backgroundColor: 'rgba(0,120,212,0.1)',
-                borderWidth: 2,
-                pointRadius: 0,
-                tension: 0.2,
-                fill: true
-            }]
-        },
+        data: { labels: [], datasets: [{
+            data: [],
+            borderColor: '#0078d4',
+            backgroundColor: 'rgba(0,120,212,0.1)',
+            borderWidth: 2, pointRadius: 0, tension: 0.2, fill: true
+        }] },
         options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            animation: false,
+            responsive: true, maintainAspectRatio: false, animation: false,
             scales: {
-                x: { 
-                    display: true,
-                    grid: { display: false },
-                    ticks: { maxTicksLimit: 5 }
-                },
-                y: { 
-                    beginAtZero: false, 
-                    grace: '15%', // Dynamischer Zoom mit 15% Puffer oben/unten
-                    ticks: { font: { size: 10 } }
-                }
+                x: { display: true, grid: { display: false }, ticks: { maxTicksLimit: 5 } },
+                y: { beginAtZero: false, grace: '15%', ticks: { font: { size: 10 } } }
             },
             plugins: { legend: { display: false } }
         }
     });
+}
+
+function initSingleChart(id, canvasId, meta) {
+    const ctx = document.getElementById(canvasId).getContext('2d');
+    if (charts[id]) charts[id].destroy();
+    charts[id] = createLiveChart(ctx);
 }
 
 // --- HELFER & NAVIGATION ---
@@ -450,7 +444,11 @@ function resetAppState() {
 
 function onDisconnected() {
     console.log("Verbindung verloren.");
-    location.reload(); // Hard Reset des Browser-Bluetooth-Stacks
+    if (dfuInProgress) {
+        console.log("DFU aktiv — kein Reload.");
+        return;
+    }
+    location.reload();
 }
 
 function disconnectBLE() { 
@@ -816,6 +814,96 @@ async function openLog() {
         console.error("Fehler beim Laden des Error-Logs:", e);
         document.getElementById('log-content').textContent = 'Fehler: ' + e.message;
     }
+}
+
+// --- FIRMWARE UPDATE (DFU) ---
+function openDfu() {
+    document.getElementById('dfu-file').value = '';
+    document.getElementById('dfu-progress-container').classList.add('hidden');
+    document.getElementById('dfu-buttons').classList.remove('hidden');
+    document.getElementById('dfu-reconnect').classList.add('hidden');
+    document.getElementById('dfu-progress-bar').style.width = '0%';
+    document.getElementById('dfu-status').textContent = 'Bereit';
+    showView('view-dfu');
+}
+
+async function startDfuUpdate() {
+    const fileInput = document.getElementById('dfu-file');
+    if (!fileInput.files.length) {
+        alert('Bitte eine Firmware-ZIP-Datei auswählen.');
+        return;
+    }
+
+    if (!confirm('Firmware-Update starten? Der Node startet neu und ist kurz nicht erreichbar.')) return;
+
+    dfuInProgress = true;
+    dfuZipData = await fileInput.files[0].arrayBuffer();
+
+    document.getElementById('dfu-progress-container').classList.remove('hidden');
+    document.getElementById('dfu-status').textContent = 'Sende DFU-Befehl an Node...';
+
+    try {
+        await chars.cmd.writeValue(new TextEncoder().encode('dfu'));
+        // Node sendet "dfu_reboot" Status und springt in Bootloader
+        // onDisconnected wird NICHT reloaden (dfuInProgress = true)
+        // Nach ~2s zeigt handleStatus den Reconnect-Button
+
+        // Falls Status-Notify nicht ankommt (Verbindung zu schnell weg),
+        // nach 3s trotzdem Reconnect-Button zeigen
+        setTimeout(() => {
+            if (dfuInProgress && document.getElementById('dfu-reconnect').classList.contains('hidden')) {
+                document.getElementById('dfu-buttons').classList.add('hidden');
+                document.getElementById('dfu-reconnect').classList.remove('hidden');
+                document.getElementById('dfu-status').textContent = 'Node startet Bootloader...';
+            }
+        }, 3000);
+    } catch (e) {
+        dfuInProgress = false;
+        document.getElementById('dfu-status').textContent = 'Fehler: ' + e.message;
+        document.getElementById('dfu-status').style.color = 'var(--danger)';
+    }
+}
+
+async function dfuConnectBootloader() {
+    const statusEl = document.getElementById('dfu-status');
+    const progressBar = document.getElementById('dfu-progress-bar');
+
+    const dfu = new NordicDfu(
+        (percent) => {
+            progressBar.style.width = percent + '%';
+            statusEl.textContent = `Übertrage... ${percent}%`;
+        },
+        (msg) => {
+            statusEl.textContent = msg;
+            console.log('DFU:', msg);
+        }
+    );
+
+    try {
+        document.getElementById('dfu-reconnect').innerHTML = '<p style="color:var(--text-secondary);">Übertragung läuft... Nicht schließen!</p>';
+        await dfu.performUpdate(dfuZipData);
+
+        progressBar.style.width = '100%';
+        progressBar.style.background = 'var(--success)';
+        statusEl.textContent = 'Update erfolgreich! Node startet neu.';
+        statusEl.style.color = 'var(--success)';
+
+        document.getElementById('dfu-reconnect').innerHTML =
+            '<button class="secondary" onclick="location.reload()">Neu verbinden</button>';
+    } catch (e) {
+        console.error('DFU Fehler:', e);
+        statusEl.textContent = 'Fehler: ' + e.message;
+        statusEl.style.color = 'var(--danger)';
+        document.getElementById('dfu-reconnect').innerHTML =
+            '<button onclick="dfuConnectBootloader()">Erneut versuchen</button>' +
+            '<button class="secondary" onclick="dfuCancel()">Abbrechen</button>';
+    }
+}
+
+function dfuCancel() {
+    dfuInProgress = false;
+    dfuZipData = null;
+    location.reload();
 }
 
 // --- EVENT LISTENER ---
