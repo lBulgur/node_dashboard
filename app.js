@@ -6,6 +6,7 @@ const UUID_RATE  = 'b4250003-1141-4123-8ff6-334d52bc6603';
 const UUID_LIVE  = 'b4250004-1141-4123-8ff6-334d52bc6603';
 const UUID_CMD   = 'b4250005-1141-4123-8ff6-334d52bc6603';
 const UUID_CONF  = 'b4250006-1141-4123-8ff6-334d52bc6603';
+const UUID_STAT  = 'b4250007-1141-4123-8ff6-334d52bc6603';
 
 let device, gatt, svc;
 let chars = {};
@@ -46,13 +47,17 @@ async function connectBLE() {
         chars.rate = await svc.getCharacteristic(UUID_RATE);
         chars.cmd  = await svc.getCharacteristic(UUID_CMD);
         chars.conf = await svc.getCharacteristic(UUID_CONF);
+        chars.stat = await svc.getCharacteristic(UUID_STAT);
 
-        // 1. Erst Notifications scharf schalten
+        // 1. Notifications scharf schalten
         await chars.conf.startNotifications();
         chars.conf.addEventListener('characteristicvaluechanged', (ev) => handleData(ev, "config"));
-        
+
         await chars.live.startNotifications();
         chars.live.addEventListener('characteristicvaluechanged', (ev) => handleData(ev, "live"));
+
+        await chars.stat.startNotifications();
+        chars.stat.addEventListener('characteristicvaluechanged', (ev) => handleStatus(ev));
         
         // 2. Aktiv den Start-Status vom Arduino anfordern!
         console.log("Fordere Start-Status an...");
@@ -66,6 +71,30 @@ async function connectBLE() {
     } catch (e) { 
         console.error(e);
         alert("Fehler: " + e.message); 
+    }
+}
+
+function handleStatus(ev) {
+    const status = new TextDecoder().decode(ev.target.value);
+    console.log("Status:", status);
+    const btn = document.querySelector('#view-sensor-setup button[onclick="testSensor()"]');
+    const resultDiv = document.getElementById('sc-test-result');
+    if (status === 'warmup' && btn) {
+        btn.textContent = 'Aufwärmen...';
+        if (resultDiv) resultDiv.innerHTML = '<span style="color:#605e5c;">Sensor wärmt auf... Bitte warten.</span>';
+    } else if (status === 'test_start' && btn) {
+        btn.textContent = 'Messung läuft...';
+    } else if (status === 'cal_ok') {
+        const cs = document.getElementById('sc-hmc-cal-status');
+        if (cs) { cs.textContent = 'Kalibrierung erfolgreich!'; cs.style.color = '#107c10'; }
+    } else if (status === 'cal_fail') {
+        const cs = document.getElementById('sc-hmc-cal-status');
+        if (cs) { cs.textContent = 'Kalibrierung fehlgeschlagen'; cs.style.color = '#d83b01'; }
+    } else if (status === 'ds_scanning') {
+        const list = document.getElementById('sc-ds-probe-list');
+        if (list) list.innerHTML = '<p style="color:#605e5c;">Scanne I2C-Bus...</p>';
+    } else if (status === 'ds_done') {
+        // Config-Push kommt automatisch mit den Ergebnissen
     }
 }
 
@@ -730,10 +759,18 @@ async function testSensor() {
         await new Promise(r => setTimeout(r, 500));
 
         // 2. Test starten
-        if (btn) btn.textContent = 'Messung läuft...';
-        resultDiv.innerHTML = '<span style="color:#605e5c;">Messung läuft... Bitte warten.</span>';
+        if (btn) btn.textContent = 'Wird vorbereitet...';
+        resultDiv.innerHTML = '<span style="color:#605e5c;">Sensor wird vorbereitet...</span>';
         await chars.cmd.writeValue(new TextEncoder().encode('test'));
         // Ergebnis kommt via configChar → applyConfig erkennt "test" Feld
+        // Timeout: Falls nach 45s keine Antwort kommt
+        setTimeout(() => {
+            if (testInProgress) {
+                testInProgress = false;
+                if (btn) { btn.disabled = false; btn.textContent = 'Sensor testen'; }
+                resultDiv.innerHTML = '<span style="color:#d83b01;">Timeout: Keine Antwort vom Sensor.</span>';
+            }
+        }, 45000);
     } catch (e) {
         testInProgress = false;
         const btn = document.querySelector('#view-sensor-setup button[onclick="testSensor()"]');
@@ -764,9 +801,17 @@ async function openLog() {
     try {
         const logDiv = document.getElementById('log-content');
         logDiv.textContent = 'Lade Error-Log...';
-        configBuffer = "";
         showView('view-log');
+        // Kurz warten damit evtl. laufender Config-Push durchkommt
+        await new Promise(r => setTimeout(r, 300));
+        configBuffer = "";
         await chars.cmd.writeValue(new TextEncoder().encode('get_log'));
+        // Timeout: Falls nach 4s nichts kommt, Hinweis anzeigen
+        setTimeout(() => {
+            if (logDiv.textContent === 'Lade Error-Log...') {
+                logDiv.textContent = 'Keine Antwort vom Sensor. Bitte erneut versuchen.';
+            }
+        }, 4000);
     } catch (e) {
         console.error("Fehler beim Laden des Error-Logs:", e);
         document.getElementById('log-content').textContent = 'Fehler: ' + e.message;
