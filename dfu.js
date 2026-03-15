@@ -24,7 +24,8 @@ class NordicDfu {
             filters: [
                 { services: [DFU_SERVICE_UUID] },
                 { namePrefix: 'DfuTarg' },
-                { namePrefix: 'Adafruit' }
+                { namePrefix: 'Adafruit' },
+                { namePrefix: 'XIAO' } // <--- NEU für den oltaco Bootloader
             ],
             optionalServices: [DFU_SERVICE_UUID]
         });
