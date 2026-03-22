@@ -18,7 +18,6 @@ let lastDataTime = Date.now();
 let disconnectTimer;
 let dfuInProgress = false;
 
-
 // --- VERBINDUNG ---
 // Diese Funktion startet oder setzt den Timer zurück
 function resetDisconnectTimer() {
@@ -444,7 +443,8 @@ function resetAppState() {
 function onDisconnected() {
     console.log("Verbindung verloren.");
     if (dfuInProgress) {
-        console.log("DFU aktiv — kein Reload.");
+        // Nach Bootloader-Reboot: Seite nicht neu laden, User muss nRF DFU App nutzen
+        dfuInProgress = false;
         return;
     }
     location.reload();
@@ -834,6 +834,12 @@ async function rebootToBootloader() {
         statusEl.textContent = 'Node startet Bootloader. Jetzt nRF DFU App öffnen.';
         statusEl.style.color = 'var(--success)';
         document.getElementById('dfu-buttons').classList.add('hidden');
+        // "Neu verbinden"-Button anzeigen damit User zurück zur App kann
+        const reconnBtn = document.createElement('button');
+        reconnBtn.textContent = 'Neu verbinden';
+        reconnBtn.style.marginTop = '1rem';
+        reconnBtn.onclick = () => location.reload();
+        statusEl.parentNode.appendChild(reconnBtn);
     } catch (e) {
         dfuInProgress = false;
         statusEl.textContent = 'Fehler: ' + e.message;
