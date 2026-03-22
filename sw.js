@@ -1,27 +1,50 @@
-const CACHE_NAME = 'node-v2';
+// AUTO-GENERATED BUILD_HASH — do not edit manually
+const BUILD_HASH = 'a12de68d';
 
-// Alle Dateien, die offline funktionieren müssen:
+const CACHE_NAME = `node-${BUILD_HASH}`;
+
 const urlsToCache = [
   './',
   './index.html',
   './app.js',
-  './dfu.js'
-  // './chart.js' <-- Wenn du Chart.js lokal abspeicherst, hier die // vorne entfernen!
+  './dfu.js',
+  './chart.min.js'
 ];
 
+// Bei Installation: neue Ressourcen cachen, sofort aktivieren
 self.addEventListener('install', event => {
+  self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then(cache => cache.addAll(urlsToCache))
   );
 });
 
+// Bei Aktivierung: alte Caches löschen, sofort übernehmen
+self.addEventListener('activate', event => {
+  event.waitUntil(
+    caches.keys().then(keys =>
+      Promise.all(
+        keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k))
+      )
+    ).then(() => self.clients.claim())
+  );
+});
+
+// Fetch: Stale-While-Revalidate
+// Cache sofort liefern, im Hintergrund aktualisieren
 self.addEventListener('fetch', event => {
   event.respondWith(
-    caches.match(event.request)
-      .then(response => {
-        // Gibt die Offline-Version zurück, falls vorhanden. Sonst lädt er aus dem Netz.
-        return response || fetch(event.request);
-      })
+    caches.match(event.request).then(cached => {
+      const fetchPromise = fetch(event.request).then(response => {
+        if (response.ok) {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+        }
+        return response;
+      }).catch(() => cached);
+
+      return cached || fetchPromise;
+    })
   );
 });

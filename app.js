@@ -780,7 +780,7 @@ async function testSensor() {
 // --- KALIBRIERUNG ---
 async function sendCalibrate() {
     try {
-        const calStatus = document.getElementById('hmc-cal-status');
+        const calStatus = document.getElementById('sc-hmc-cal-status');
         calStatus.textContent = "Kalibrierung läuft...";
         calStatus.style.color = "#605e5c";
 
