@@ -1,5 +1,5 @@
 // AUTO-GENERATED BUILD_HASH — do not edit manually
-const BUILD_HASH = 'a12de68d';
+const BUILD_HASH = '5e758e0c';
 
 const CACHE_NAME = `node-${BUILD_HASH}`;
 
@@ -7,7 +7,6 @@ const urlsToCache = [
   './',
   './index.html',
   './app.js',
-  './dfu.js',
   './chart.min.js'
 ];
 

@@ -17,7 +17,6 @@ let configBuffer = "";
 let lastDataTime = Date.now();
 let disconnectTimer;
 let dfuInProgress = false;
-let dfuZipData = null;
 
 
 // --- VERBINDUNG ---
@@ -98,10 +97,10 @@ function handleStatus(ev) {
     } else if (status === 'ds_done') {
         // Config-Push kommt automatisch mit den Ergebnissen
     } else if (status === 'dfu_reboot') {
-        // Node springt in den Bootloader — Reconnect-Button zeigen
+        // Node springt in den Bootloader
+        document.getElementById('dfu-status').textContent = 'Node startet Bootloader. Jetzt nRF DFU App öffnen.';
+        document.getElementById('dfu-status').style.color = 'var(--success)';
         document.getElementById('dfu-buttons').classList.add('hidden');
-        document.getElementById('dfu-reconnect').classList.remove('hidden');
-        document.getElementById('dfu-status').textContent = 'Node startet Bootloader...';
     }
 }
 
@@ -818,92 +817,28 @@ async function openLog() {
 
 // --- FIRMWARE UPDATE (DFU) ---
 function openDfu() {
-    document.getElementById('dfu-file').value = '';
-    document.getElementById('dfu-progress-container').classList.add('hidden');
+    document.getElementById('dfu-status').textContent = '';
     document.getElementById('dfu-buttons').classList.remove('hidden');
-    document.getElementById('dfu-reconnect').classList.add('hidden');
-    document.getElementById('dfu-progress-bar').style.width = '0%';
-    document.getElementById('dfu-status').textContent = 'Bereit';
     showView('view-dfu');
 }
 
-async function startDfuUpdate() {
-    const fileInput = document.getElementById('dfu-file');
-    if (!fileInput.files.length) {
-        alert('Bitte eine Firmware-ZIP-Datei auswählen.');
-        return;
-    }
+async function rebootToBootloader() {
+    if (!confirm('Node in Bootloader-Modus starten? Danach mit der nRF DFU App verbinden.')) return;
 
-    if (!confirm('Firmware-Update starten? Der Node startet neu und ist kurz nicht erreichbar.')) return;
-
+    const statusEl = document.getElementById('dfu-status');
     dfuInProgress = true;
-    dfuZipData = await fileInput.files[0].arrayBuffer();
-
-    document.getElementById('dfu-progress-container').classList.remove('hidden');
-    document.getElementById('dfu-status').textContent = 'Sende DFU-Befehl an Node...';
 
     try {
+        statusEl.textContent = 'Sende Bootloader-Befehl...';
         await chars.cmd.writeValue(new TextEncoder().encode('dfu'));
-        // Node sendet "dfu_reboot" Status und springt in Bootloader
-        // onDisconnected wird NICHT reloaden (dfuInProgress = true)
-        // Nach ~2s zeigt handleStatus den Reconnect-Button
-
-        // Falls Status-Notify nicht ankommt (Verbindung zu schnell weg),
-        // nach 3s trotzdem Reconnect-Button zeigen
-        setTimeout(() => {
-            if (dfuInProgress && document.getElementById('dfu-reconnect').classList.contains('hidden')) {
-                document.getElementById('dfu-buttons').classList.add('hidden');
-                document.getElementById('dfu-reconnect').classList.remove('hidden');
-                document.getElementById('dfu-status').textContent = 'Node startet Bootloader...';
-            }
-        }, 3000);
+        statusEl.textContent = 'Node startet Bootloader. Jetzt nRF DFU App öffnen.';
+        statusEl.style.color = 'var(--success)';
+        document.getElementById('dfu-buttons').classList.add('hidden');
     } catch (e) {
         dfuInProgress = false;
-        document.getElementById('dfu-status').textContent = 'Fehler: ' + e.message;
-        document.getElementById('dfu-status').style.color = 'var(--danger)';
-    }
-}
-
-async function dfuConnectBootloader() {
-    const statusEl = document.getElementById('dfu-status');
-    const progressBar = document.getElementById('dfu-progress-bar');
-
-    const dfu = new NordicDfu(
-        (percent) => {
-            progressBar.style.width = percent + '%';
-            statusEl.textContent = `Übertrage... ${percent}%`;
-        },
-        (msg) => {
-            statusEl.textContent = msg;
-            console.log('DFU:', msg);
-        }
-    );
-
-    try {
-        document.getElementById('dfu-reconnect').innerHTML = '<p style="color:var(--text-secondary);">Übertragung läuft... Nicht schließen!</p>';
-        await dfu.performUpdate(dfuZipData);
-
-        progressBar.style.width = '100%';
-        progressBar.style.background = 'var(--success)';
-        statusEl.textContent = 'Update erfolgreich! Node startet neu.';
-        statusEl.style.color = 'var(--success)';
-
-        document.getElementById('dfu-reconnect').innerHTML =
-            '<button class="secondary" onclick="location.reload()">Neu verbinden</button>';
-    } catch (e) {
-        console.error('DFU Fehler:', e);
         statusEl.textContent = 'Fehler: ' + e.message;
         statusEl.style.color = 'var(--danger)';
-        document.getElementById('dfu-reconnect').innerHTML =
-            '<button onclick="dfuConnectBootloader()">Erneut versuchen</button>' +
-            '<button class="secondary" onclick="dfuCancel()">Abbrechen</button>';
     }
-}
-
-function dfuCancel() {
-    dfuInProgress = false;
-    dfuZipData = null;
-    location.reload();
 }
 
 // --- EVENT LISTENER ---

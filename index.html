@@ -375,27 +375,14 @@
     <div id="view-dfu" class="hidden">
     <h3>Firmware Update</h3>
     <p style="color:var(--text-secondary); font-size:0.9em;">
-        Wähle eine <code>.zip</code> Firmware-Datei aus (wird beim Build erzeugt).
+        Startet den Bootloader-Modus. Dann mit der <strong>nRF Device Firmware Update</strong> App die neue Firmware hochladen.
     </p>
 
-    <input type="file" id="dfu-file" accept=".zip" style="width:100%; padding:12px; margin-bottom:15px; border:1px solid var(--border); border-radius:8px;">
-
-    <div id="dfu-progress-container" class="hidden">
-        <div style="background:var(--border); border-radius:8px; overflow:hidden; height:24px; margin-bottom:10px;">
-            <div id="dfu-progress-bar" style="background:var(--primary); height:100%; width:0%; transition:width 0.3s;"></div>
-        </div>
-        <p id="dfu-status" style="color:var(--text-secondary); font-size:0.85em; text-align:center;">Bereit</p>
-    </div>
+    <p id="dfu-status" style="color:var(--text-secondary); font-size:0.85em; text-align:center;"></p>
 
     <div id="dfu-buttons">
-        <button onclick="startDfuUpdate()">Update starten</button>
+        <button onclick="rebootToBootloader()">Bootloader starten</button>
         <button class="secondary" onclick="showView('view-main')">Zurück</button>
-    </div>
-
-    <div id="dfu-reconnect" class="hidden">
-        <p style="color:var(--text-secondary); margin-bottom:15px;">Node ist im Bootloader-Modus. Klicke um die Firmware zu übertragen:</p>
-        <button onclick="dfuConnectBootloader()">Mit Bootloader verbinden</button>
-        <button class="secondary danger" onclick="dfuCancel()">Abbrechen</button>
     </div>
     </div>
 
@@ -410,7 +397,6 @@
     </div>
     </div>
 
-<script src="dfu.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
