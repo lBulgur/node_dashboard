@@ -1,3 +1,9 @@
+// --- HILFSFUNKTIONEN ---
+function escapeHTML(str) {
+    if (typeof str !== 'string') return str;
+    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
 // --- KONFIGURATION & UUIDS ---
 const UUID_SVC   = 'b4250000-1141-4123-8ff6-334d52bc6603';
 const UUID_MODE  = 'b4250001-1141-4123-8ff6-334d52bc6603';
@@ -20,7 +26,21 @@ let dfuInProgress = false;
 let configVersion = 0; // Zähler für Config-Empfang (inkrementiert bei jedem applyConfig)
 
 // --- VERBINDUNG ---
-// Diese Funktion startet oder setzt den Timer zurück
+
+function showToast(msg, durationMs = 4000) {
+    let toast = document.getElementById('app-toast');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'app-toast';
+        toast.style.cssText = 'position:fixed;bottom:30px;left:50%;transform:translateX(-50%);background:#323130;color:#fff;padding:12px 24px;border-radius:8px;font-size:14px;z-index:9999;opacity:0;transition:opacity 0.3s;pointer-events:none;text-align:center;max-width:90%;';
+        document.body.appendChild(toast);
+    }
+    toast.textContent = msg;
+    toast.style.opacity = '1';
+    clearTimeout(toast._timer);
+    toast._timer = setTimeout(() => { toast.style.opacity = '0'; }, durationMs);
+}
+
 function resetDisconnectTimer() {
     clearTimeout(disconnectTimer);
     // Nach 5 Minuten (300.000 ms) ohne Datenempfang wird getrennt
@@ -28,9 +48,9 @@ function resetDisconnectTimer() {
         if (gatt && gatt.connected) {
             console.log("Inaktivität erkannt. Trenne Verbindung zum Stromsparen...");
             disconnectBLE();
-            alert("Verbindung wegen Inaktivität getrennt (Stromsparmodus).");
+            showToast("Verbindung wegen Inaktivität getrennt (Stromsparmodus).", 6000);
         }
-    }, 300000); 
+    }, 300000);
 }
 
 async function connectBLE() {
@@ -199,13 +219,13 @@ function applyConfig(config) {
 
         const resultDiv = document.getElementById('sc-test-result');
         if (config.error) {
-            resultDiv.innerHTML = `<span style="color:#d83b01; font-weight:600;">${config.error}</span>`;
+            resultDiv.innerHTML = `<span style="color:#d83b01; font-weight:600;">${escapeHTML(config.error)}</span>`;
         } else if (config.v) {
             let html = '';
             for (const [key, val] of Object.entries(config.v)) {
                 html += `<div style="display:flex; justify-content:space-between; padding:4px 0;">
-                    <span style="font-weight:500;">${key}</span>
-                    <span style="font-weight:600; color:#0078d4;">${val}</span>
+                    <span style="font-weight:500;">${escapeHTML(String(key))}</span>
+                    <span style="font-weight:600; color:#0078d4;">${escapeHTML(String(val))}</span>
                 </div>`;
             }
             resultDiv.innerHTML = html;
@@ -238,7 +258,7 @@ function applyConfig(config) {
     const statusDiv = document.getElementById('sc-sensor-status');
     if (statusDiv) {
         if (config.sensorState === 'active' && sensorMetadata.length > 0) {
-            const names = sensorMetadata.filter(s => s.name !== 'Battery').map(s => s.data).join(', ');
+            const names = sensorMetadata.filter(s => s.name !== 'Battery').map(s => escapeHTML(s.data)).join(', ');
             statusDiv.innerHTML = `<span style="color:#107c10; font-weight:600;">Sensor aktiv:</span> ${names}`;
             statusDiv.style.background = '#dff6dd';
             statusDiv.style.borderColor = '#107c10';
@@ -314,7 +334,7 @@ function renderThresholdFields(channels) {
     channels.forEach(ch => {
         container.innerHTML += `
             <div class="input-group">
-                <label>${ch.data} – Schwellwert (${ch.unit})</label>
+                <label>${escapeHTML(ch.data)} – Schwellwert (${escapeHTML(ch.unit)})</label>
                 <input type="number" class="thr-input" data-id="${ch.id}"
                        value="${ch.thr}" step="any" min="0">
             </div>`;
@@ -493,7 +513,7 @@ function renderLiveConfig() {
             container.innerHTML += `
                 <label class="sensor-row">
                     <input type="checkbox" class="live-sel" value="${s.id}" checked>
-                    <span><strong>${s.data}</strong> (${s.name})</span>
+                    <span><strong>${escapeHTML(s.data)}</strong> (${escapeHTML(s.name)})</span>
                 </label>`;
         });
     }
@@ -568,9 +588,17 @@ async function saveSensorConfig() {
         }
 
         console.log("Sende Sensor-Konfiguration:", newSettings);
-        await chars.conf.writeValue(new TextEncoder().encode(JSON.stringify(newSettings)));
+        try {
+            await chars.conf.writeValue(new TextEncoder().encode(JSON.stringify(newSettings)));
+        } catch (writeErr) {
+            throw new Error("Konfiguration konnte nicht gesendet werden: " + writeErr.message);
+        }
         await new Promise(r => setTimeout(r, 500));
-        await chars.cmd.writeValue(new TextEncoder().encode('save'));
+        try {
+            await chars.cmd.writeValue(new TextEncoder().encode('save'));
+        } catch (writeErr) {
+            throw new Error("Speicher-Befehl fehlgeschlagen: " + writeErr.message);
+        }
 
         // Config neu laden, damit sensorMetadata (Kanäle/Schwellwerte) aktualisiert wird
         await new Promise(r => setTimeout(r, 500));
@@ -581,6 +609,9 @@ async function saveSensorConfig() {
         while (w < 2000 && configVersion === vBefore) {
             await new Promise(r => setTimeout(r, 200));
             w += 200;
+        }
+        if (configVersion === vBefore) {
+            console.warn("Config-Bestätigung nicht empfangen (Timeout)");
         }
 
         showView('view-main');
@@ -626,13 +657,13 @@ async function startLive(mode) {
 
     selectedIds.forEach(id => {
         const meta = sensorMetadata.find(m => m.id === id);
-        tableHead.innerHTML += `<th>${meta.data} [${meta.unit}]</th>`;
+        tableHead.innerHTML += `<th>${escapeHTML(meta.data)} [${escapeHTML(meta.unit)}]</th>`;
         
         if (mode === 'chart') {
             const canvasId = `chart-${id}`;
             chartContainer.innerHTML += `
                 <div class="chart-card">
-                    <small>${meta.data} (${meta.unit})</small>
+                    <small>${escapeHTML(meta.data)} (${escapeHTML(meta.unit)})</small>
                     <div style="height:120px"><canvas id="${canvasId}"></canvas></div>
                 </div>`;
             setTimeout(() => initSingleChart(id, canvasId, meta), 100);
@@ -779,12 +810,12 @@ function renderDS18B20Probes(probes) {
         const shortAddr = p.addr ? p.addr.substring(0, 4) + '...' + p.addr.substring(12) : '?';
         const tempStr = (p.temp !== undefined && p.temp !== null) ? parseFloat(p.temp).toFixed(1) + ' °C' : '–';
         list.innerHTML += `
-            <div class="ds-probe-row" data-addr="${p.addr}" style="background:#f8f9fa; border:1px solid #edebe9; border-radius:8px; padding:12px 15px; margin-bottom:10px;">
+            <div class="ds-probe-row" data-addr="${escapeHTML(p.addr)}" style="background:#f8f9fa; border:1px solid #edebe9; border-radius:8px; padding:12px 15px; margin-bottom:10px;">
                 <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
-                    <span style="font-size:0.85em; color:#605e5c;">Sensor ${i+1} (${shortAddr})</span>
-                    <span style="font-size:0.9em; font-weight:600; color:#0078d4;">${tempStr}</span>
+                    <span style="font-size:0.85em; color:#605e5c;">Sensor ${i+1} (${escapeHTML(shortAddr)})</span>
+                    <span style="font-size:0.9em; font-weight:600; color:#0078d4;">${escapeHTML(tempStr)}</span>
                 </div>
-                <input type="text" class="ds-label" value="${p.label || ''}" maxlength="15" placeholder="z.B. Vorlauf HK1" style="margin-bottom:0;">
+                <input type="text" class="ds-label" value="${escapeHTML(p.label || '')}" maxlength="15" placeholder="z.B. Vorlauf HK1" style="margin-bottom:0;">
             </div>`;
     });
 }

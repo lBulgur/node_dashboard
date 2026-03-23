@@ -1,5 +1,5 @@
 // AUTO-GENERATED BUILD_HASH — do not edit manually
-const BUILD_HASH = 'a5a3336e';
+const BUILD_HASH = '8c180b2e';
 
 const CACHE_NAME = `node-${BUILD_HASH}`;
 
@@ -7,7 +7,9 @@ const urlsToCache = [
   './',
   './index.html',
   './app.js',
-  './chart.min.js'
+  './chart.min.js',
+  './manifest.json',
+  './icon.svg'
 ];
 
 // Bei Installation: neue Ressourcen cachen, sofort aktivieren
