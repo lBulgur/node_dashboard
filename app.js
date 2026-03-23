@@ -17,6 +17,7 @@ let configBuffer = "";
 let lastDataTime = Date.now();
 let disconnectTimer;
 let dfuInProgress = false;
+let configVersion = 0; // Zähler für Config-Empfang (inkrementiert bei jedem applyConfig)
 
 // --- VERBINDUNG ---
 // Diese Funktion startet oder setzt den Timer zurück
@@ -174,6 +175,7 @@ let lastConfig = {};
 
 function applyConfig(config) {
     console.log("Konfiguration empfangen:", config);
+    configVersion++;
 
     // Error-Log-Antwort: Nur im Log-View anzeigen
     if (config.errors !== undefined) {
@@ -232,6 +234,21 @@ function applyConfig(config) {
         document.getElementById('lt-minUpdate').value = interval;
     }
 
+    // --- Sensor-Status-Banner ---
+    const statusDiv = document.getElementById('sc-sensor-status');
+    if (statusDiv) {
+        if (config.sensorState === 'active' && sensorMetadata.length > 0) {
+            const names = sensorMetadata.filter(s => s.name !== 'Battery').map(s => s.data).join(', ');
+            statusDiv.innerHTML = `<span style="color:#107c10; font-weight:600;">Sensor aktiv:</span> ${names}`;
+            statusDiv.style.background = '#dff6dd';
+            statusDiv.style.borderColor = '#107c10';
+        } else {
+            statusDiv.innerHTML = '<span style="color:#8a6d3b; font-weight:600;">Kein Sensor erkannt.</span> Bitte Sensortyp ausw\u00e4hlen und speichern.';
+            statusDiv.style.background = '#fff3cd';
+            statusDiv.style.borderColor = '#ffc107';
+        }
+    }
+
     // --- Sensor-Config-Felder ---
     const sel = document.getElementById('sc-sensor-type');
     sel.innerHTML = "";
@@ -266,7 +283,10 @@ function applyConfig(config) {
     }
 
     // Schwellwert-Felder dynamisch rendern (nur Sensor-Kanäle, ohne Batterie)
-    renderThresholdFields(sensorMetadata.filter(s => s.name !== "Battery"));
+    const sensorChannels = sensorMetadata.filter(s => s.name !== "Battery");
+    renderThresholdFields(sensorChannels);
+    const ltNoSensor = document.getElementById('lt-no-sensor');
+    if (ltNoSensor) ltNoSensor.classList.toggle('hidden', sensorChannels.length > 0);
 
     const badge = document.getElementById('lt-status');
     if (badge) {
@@ -461,29 +481,56 @@ function showView(id) {
 
 function renderLiveConfig() {
     const container = document.getElementById('live-sensor-options');
-    container.innerHTML = ""; 
-    
-    // Wir nutzen hier die gleiche 'sensor-row' Klasse wie in den Einstellungen
-    sensorMetadata.forEach(s => {
-        container.innerHTML += `
-            <label class="sensor-row">
-                <input type="checkbox" class="live-sel" value="${s.id}" checked> 
-                <span><strong>${s.data}</strong> (${s.name})</span>
-            </label>`;
-    });
+    container.innerHTML = "";
+
+    const noSensorHint = document.getElementById('live-no-sensor');
+    if (sensorMetadata.length === 0) {
+        if (noSensorHint) noSensorHint.classList.remove('hidden');
+    } else {
+        if (noSensorHint) noSensorHint.classList.add('hidden');
+        // Wir nutzen hier die gleiche 'sensor-row' Klasse wie in den Einstellungen
+        sensorMetadata.forEach(s => {
+            container.innerHTML += `
+                <label class="sensor-row">
+                    <input type="checkbox" class="live-sel" value="${s.id}" checked>
+                    <span><strong>${s.data}</strong> (${s.name})</span>
+                </label>`;
+        });
+    }
     showView('view-live-setup');
 }
 
 async function openSensorConfig() {
     try {
+        showView('view-sensor-setup');
+        const statusDiv = document.getElementById('sc-sensor-status');
+        if (statusDiv) {
+            statusDiv.innerHTML = '<span style="color:#605e5c;">Lade Konfiguration...</span>';
+            statusDiv.style.background = '#f3f2f1';
+            statusDiv.style.borderColor = '#edebe9';
+        }
         configBuffer = "";
+        const versionBefore = configVersion;
         await chars.cmd.writeValue(new TextEncoder().encode('ping'));
-        setTimeout(() => {
-            showView('view-sensor-setup');
-        }, 500);
+        // Warte auf Config-Empfang (max 3s)
+        let waited = 0;
+        while (waited < 3000 && configVersion === versionBefore) {
+            await new Promise(r => setTimeout(r, 200));
+            waited += 200;
+        }
+        if (configVersion === versionBefore && statusDiv) {
+            statusDiv.innerHTML = '<span style="color:#d83b01; font-weight:600;">Konfiguration konnte nicht geladen werden.</span> BLE-Verbindung pr\u00fcfen.';
+            statusDiv.style.background = '#fed9cc';
+            statusDiv.style.borderColor = '#d83b01';
+        }
     } catch (e) {
         console.error("Fehler beim Öffnen der Sensor-Konfiguration:", e);
-        showView('view-sensor-setup');
+        const statusDiv = document.getElementById('sc-sensor-status');
+        if (statusDiv) {
+            statusDiv.innerHTML = '<span style="color:#d83b01; font-weight:600;">BLE-Verbindungsfehler.</span>';
+            statusDiv.style.background = '#fed9cc';
+            statusDiv.style.borderColor = '#d83b01';
+        }
     }
 }
 
@@ -513,10 +560,28 @@ async function saveSensorConfig() {
             if (probes.length > 0) newSettings.ds18b20_probes = probes;
         }
 
+        const statusDiv = document.getElementById('sc-sensor-status');
+        if (statusDiv) {
+            statusDiv.innerHTML = '<span style="color:#605e5c;">Wird gespeichert...</span>';
+            statusDiv.style.background = '#f3f2f1';
+            statusDiv.style.borderColor = '#edebe9';
+        }
+
         console.log("Sende Sensor-Konfiguration:", newSettings);
         await chars.conf.writeValue(new TextEncoder().encode(JSON.stringify(newSettings)));
         await new Promise(r => setTimeout(r, 500));
         await chars.cmd.writeValue(new TextEncoder().encode('save'));
+
+        // Config neu laden, damit sensorMetadata (Kanäle/Schwellwerte) aktualisiert wird
+        await new Promise(r => setTimeout(r, 500));
+        configBuffer = "";
+        const vBefore = configVersion;
+        await chars.cmd.writeValue(new TextEncoder().encode('ping'));
+        let w = 0;
+        while (w < 2000 && configVersion === vBefore) {
+            await new Promise(r => setTimeout(r, 200));
+            w += 200;
+        }
 
         showView('view-main');
     } catch (e) {
@@ -765,7 +830,11 @@ async function testSensor() {
             if (testInProgress) {
                 testInProgress = false;
                 if (btn) { btn.disabled = false; btn.textContent = 'Sensor testen'; }
-                resultDiv.innerHTML = '<span style="color:#d83b01;">Timeout: Keine Antwort vom Sensor.</span>';
+                resultDiv.innerHTML = '<span style="color:#d83b01; font-weight:600;">Sensor-Test fehlgeschlagen (Timeout)</span>'
+                    + '<div style="margin-top:8px; font-size:0.9em; color:#605e5c;">'
+                    + '\u2022 Sensor richtig angeschlossen? (Kabel pr\u00fcfen)<br>'
+                    + '\u2022 Richtigen Sensortyp ausgew\u00e4hlt?<br>'
+                    + '\u2022 Bei SCD40/SCD41: 30s Aufw\u00e4rmzeit abwarten</div>';
             }
         }, 45000);
     } catch (e) {

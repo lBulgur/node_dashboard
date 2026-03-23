@@ -221,7 +221,10 @@
 
     <div id="view-live-setup" class="hidden">
         <h3>Live Messung konfigurieren</h3>
-        <p>Wähle die Sensoren aus:</p>
+        <div id="live-no-sensor" class="hint-box hidden" style="background:#fff3cd; border-color:#ffc107; margin-bottom:15px;">
+            Kein Sensor konfiguriert. Bitte erst unter <strong>Sensor konfigurieren</strong> einen Sensor ausw&auml;hlen und speichern.
+        </div>
+        <p>W&auml;hle die Sensoren aus:</p>
         <div id="live-sensor-options" class="sensor-selection"></div> ...
         
         <label for="live-interval">Messintervall (Sekunden):</label>
@@ -262,6 +265,8 @@
 
     <div id="view-sensor-setup" class="hidden">
     <h3>Sensor konfigurieren</h3>
+
+    <div id="sc-sensor-status" class="hint-box" style="margin-bottom:15px;"></div>
 
     <div class="input-group">
         <label>Aktiver Sensor</label>
@@ -363,6 +368,9 @@
     </div>
 
     <h3>Schwellwerte</h3>
+    <div id="lt-no-sensor" class="hint-box hidden" style="background:#fff3cd; border-color:#ffc107;">
+        Kein Sensor konfiguriert. Bitte erst unter <strong>Sensor konfigurieren</strong> einen Sensor ausw&auml;hlen und speichern.
+    </div>
     <div id="lt-threshold-fields"></div>
 
     <div class="button-group" style="margin-top: 30px;">
