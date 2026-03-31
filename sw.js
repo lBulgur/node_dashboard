@@ -8,8 +8,7 @@ const urlsToCache = [
   './index.html',
   './app.js',
   './chart.min.js',
-  './manifest.json',
-  './icon.svg'
+  './manifest.json'
 ];
 
 // Bei Installation: neue Ressourcen cachen, sofort aktivieren
